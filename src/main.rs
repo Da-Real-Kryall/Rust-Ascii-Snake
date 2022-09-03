@@ -1,5 +1,31 @@
 #![allow(non_snake_case)] //only for crate name
 
+
+/*
+delay
+
+get next direction
+
+buffer new location
+
+check if new location is valid
+    if not valid and grace is false, make grace true and skip to start of sequence
+
+check if apple is eaten at said location
+    if apple is eaten, set apple eaten to true
+    increment score by one
+    
+if apple is eaten, don't remove four from snake segments
+
+
+*/
+const SWAP: [usize; 4] = [ //could generate with i-i%2+1-i%2 but eeeghh probably not worth it
+    1,
+    0,
+    3,
+    2
+];
+
 const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
     [ //from up
         ['?', '?', '?'], //to up
@@ -29,8 +55,8 @@ const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
     //[[' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' ']]
 ];
 
-const HEIGHT: usize = 16;
-const WIDTH: usize = 32;
+const HEIGHT: usize = 12;
+const WIDTH: usize = 20;
 
 extern crate termion;
 
@@ -48,7 +74,7 @@ use termion::{
 use rand::{Rng,SeedableRng,rngs::StdRng};
 
 fn main() {
-    let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
+    //let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
 
     let (tx, rx) = sync_channel(2);
 
@@ -61,9 +87,6 @@ fn main() {
     });
 
     bleh.join().expect("oops! the child thread panicked");
-
-    write!(stdout, "Exited.").unwrap();
-    stdout.flush().unwrap();
 }
 
 fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize)) {
@@ -86,29 +109,26 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
             };
             
             let cell = board[row_index][col_index];
-            if cell >= 4 {
-                let mut origin = match (cell.clone()%4) as usize {
-                    0 => 1,
-                    1 => 0,
-                    2 => 3,
-                    3 => 2,
-                    _ => 4
-                };
-                //gotta shorten this
-                if board[row_index.max(1)-1][col_index] / 4 == cell / 4 - 1 && board[row_index.max(1)-1][col_index].is_positive() {
-                    origin = 0;
-                }
-                else if board[(row_index+1).min(HEIGHT-1)][col_index] / 4 == cell / 4 - 1 && board[(row_index+1).min(HEIGHT-1)][col_index].is_positive() {
-                    origin = 1;
-                }
-                else if board[row_index][col_index.max(1)-1] / 4 == cell / 4 - 1 && board[row_index][col_index.max(1)-1].is_positive() { 
-                    origin = 2;
-                }
-                else if board[row_index][(col_index+1).min(WIDTH-1)] / 4 == cell / 4 - 1 && board[row_index][(col_index+1).min(WIDTH-1)].is_positive() {
-                    origin = 3;
-                }
+            if cell > -1 {
+                let origin: usize = {
+                    let mut o = SWAP[(cell.clone()%4) as usize];
 
-                let segment = match cell / 4 -1 {
+                    let candidates: [i16; 4] = [
+                        board[row_index.max(1)-1][col_index],
+                        board[row_index.min(HEIGHT-2)+1][col_index],
+                        board[row_index][col_index.max(1)-1],
+                        board[row_index][col_index.min(WIDTH-2)+1],
+                    ];
+                    for i in 0..4 {
+                        if (candidates[i]+4)%4 == SWAP[i] as i16 && (candidates[i]+4)/4 == cell/4 {
+                            o = i;
+                            break;
+                        }
+                    }
+                    o
+                };
+
+                let segment = match cell / 4  {
                     0 => 2,
                     _ => match cell / 4 == *length {
                         true => 0,
@@ -117,10 +137,14 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
                 };
                 char_to_print = CHAR_REFERENCE[(cell%4) as usize][origin][segment];
             };
+            //buffer.push(' ');
             buffer.push(char_to_print);
+            //buffer.push((cell/4+49) as u8 as char); //for debugging, 48 is ascii for 0
+            //buffer.push((cell%4+49) as u8 as char); //for debugging, 48 is ascii for 0
         }
         buffer.push('│');
         buffer.push('\n');
+        //buffer.push('\n');
         buffer.push('\r');
     }
 
@@ -135,23 +159,21 @@ fn loop1(rx: Receiver<char>) {
     //this can be the game loop?
     let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
 
-    let mut board: Vec<Vec<i16>> = vec![vec![0 as i16; WIDTH]; HEIGHT];
+    let mut board: Vec<Vec<i16>> = vec![vec![-5 as i16; WIDTH]; HEIGHT];
     let mut direction: usize = 3;
     let mut x: usize = 0;
     let mut y: usize = 0;
+    let mut nx: usize;
+    let mut ny: usize;
     let mut length: i16 = 1;
     let mut apple_pos: (usize, usize) = (WIDTH/2, HEIGHT/2);
+    let mut olength: i16 = 1;
+    let mut grace: bool = true;
 
     loop {
-        thread::sleep(std::time::Duration::from_millis(110));
-        
-        //remove 4 from every cell
-        for row in board.iter_mut() {
-            for cell in row.iter_mut() {
-                *cell = (*cell - 4).max(0);
-            }
-        }
-        
+        thread::sleep(std::time::Duration::from_millis(250));
+
+        //after delay, get keys pressed within delay
         let input_key = match rx.try_recv() {
             Ok(id) => id,
             Err(_) => '.',
@@ -163,50 +185,58 @@ fn loop1(rx: Receiver<char>) {
             'd' => 3,
             _ => direction
         };
-
-        board[y][x] = direction as i16+4*length-4; //optimize
-
-        match direction {
-            0 => {
-                if y > 0 {
-                    y -= 1;
-                }
-            },
-            1 => {
-                if y < HEIGHT - 1 {
-                    y += 1;
-                }
-            },
-            2 => {
-                if x > 0 {
-                    x -= 1;
-                }
-            },
-            3 => {
-                if x < WIDTH - 1 {
-                    x += 1;
-                }
-            },
-            _ => {}
+        
+        nx = match direction as i16 {
+            2 => x-1,
+            3 => x+1,
+            _ => x
+        };
+        ny = match direction as i16 {
+            0 => y-1,
+            1 => y+1,
+            _ => y
+        };
+        
+        if nx >= WIDTH || ny >= HEIGHT || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
+            if grace {
+                grace = false;
+                continue;
+            }
+            break;
         }
 
-        board[y][x] = direction as i16+4*length; //optimize
+        //update snake's position
+        board[y][x] = direction as i16 + 4 * length;
         
-        
-        if apple_pos == (x, y) {
+        board[ny][nx] = direction as i16 + 4 * length + 4;
+
+        if apple_pos == (nx, ny) {
             length += 1;
             apple_pos = gen_rand(length, &board);
+        }
+        //remove four from all board elements to a minimum of -5 if they aren't already -1
+        if olength == length {
             for row in board.iter_mut() {
                 for cell in row.iter_mut() {
-                    if *cell > 0 {
-                        *cell = *cell + 4;
+                    if *cell > -5 {
+                        *cell = (*cell - 4).max(-5);
                     }
                 }
             }
         }
+        x = nx.clone();
+        y = ny.clone();
+        olength = length.clone();
 
         print_board(&board, &mut stdout, &length, apple_pos);
+
+        grace = true;
     }
+
+    write!(stdout, "Game over!").unwrap();
+    stdout.flush().unwrap();
+
+
 }
 
 fn loop2(tx: SyncSender<char>) {
@@ -239,11 +269,12 @@ fn loop2(tx: SyncSender<char>) {
 }
 
 fn gen_rand(seed: i16, board: &Vec<Vec<i16>>) -> (usize, usize) {
+
     let mut rng = StdRng::seed_from_u64(seed as u64);
     let mut index = rng.gen_range(0, WIDTH*HEIGHT - seed as usize);
     for row_index in 0..HEIGHT {
         for col_index in 0..WIDTH {
-            if board[row_index][col_index] == 0 {
+            if board[row_index][col_index] <= -1 {
                 index -= 1;
             }
             if index == 0 {
