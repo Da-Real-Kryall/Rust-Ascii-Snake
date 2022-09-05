@@ -54,7 +54,7 @@ const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
 ];
 
 const HEIGHT: usize = 12;
-const WIDTH: usize = 20;
+const WIDTH: usize = 24;
 
 extern crate termion;
 
@@ -64,6 +64,7 @@ use std::{
     thread,
 };
 use termion::{
+    cursor::Goto,
     event::{Event, Key},
     input::{MouseTerminal, TermRead},
     raw::IntoRawMode,
@@ -87,23 +88,31 @@ fn main() {
     bleh.join().expect("oops! the child thread panicked");
 }
 
-fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize)) {
+fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize), grace: i8) {
     write!(stdout, "{}", termion::clear::All).unwrap();
 
+    let zero_zero = (termion::terminal_size().unwrap().0/2 - WIDTH as u16/2 as u16, termion::terminal_size().unwrap().1/2 - HEIGHT as u16/2);
     let mut buffer = String::new();
 
-    buffer.push('┌');
-    for _ in 0..WIDTH {buffer += "─";};
-    buffer.push('┐');
-    buffer += "\n\r";
+    //if grace != 5 { //add flashing character flag
+    //    buffer += termion::style::Blink.to_string().as_str();
+    //} else {
+    //    buffer += termion::style::NoBlink.to_string().as_str();
+    //}
 
-    for row_index in 0..HEIGHT {
-        buffer.push('│');
-        for col_index in 0..WIDTH {
+    buffer += Goto(zero_zero.0, zero_zero.1).to_string().as_str();
+    buffer.push(CHAR_REFERENCE[1][3][1]);
+    for _ in 0..WIDTH {buffer.push(CHAR_REFERENCE[2][3][1]);};
+    buffer.push('▖');
+
+    for row_index in 0..board.len() {
+        buffer += Goto(zero_zero.0, zero_zero.1 + 1 + row_index as u16).to_string().as_str();
+        buffer += "▐";
+        for col_index in 0..board[row_index].len() {
 
             let mut char_to_print = match apple_pos == (col_index, row_index) {
-                true => '',
-                false => ' ',
+                true => {buffer += termion::color::Fg(termion::color::LightRed).to_string().as_str(); ''},
+                false => ' '//{buffer += termion::color::Fg(termion::color::LightBlack).to_string().as_str();['▒', '░'][(row_index+col_index)%2]}
             };
             
             let cell = board[row_index][col_index];
@@ -135,22 +144,29 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
                 };
                 char_to_print = CHAR_REFERENCE[(cell%4) as usize][origin][segment];
             };
-            //buffer.push(' ');
-            buffer.push(char_to_print);
-            //buffer.push((cell/4+49) as u8 as char); //for debugging, 48 is ascii for 0
-            //buffer.push((cell%4+49) as u8 as char); //for debugging, 48 is ascii for 0
-        }
-        buffer.push('│');
-        buffer.push('\n');
-        //buffer.push('\n');
-        buffer.push('\r');
-    }
 
-    buffer.push('└');
-    for _ in 0..WIDTH {buffer += "─";};
-    buffer.push('┘');
-    buffer += "\n\r";
-    write!(stdout, "{}", buffer).unwrap();
+            if cell > -1 {
+                buffer += match ((*length - cell/4)%2 == 0, grace != 5) {
+                    (true, false) => termion::color::Fg(termion::color::LightGreen).to_string(),
+                    (false, false) => termion::color::Fg(termion::color::LightYellow).to_string(),
+                    (true, true) => termion::color::Fg(termion::color::Green).to_string(),
+                    (false, true) => termion::color::Fg(termion::color::Yellow).to_string()
+                }.as_str();
+            }
+            buffer.push(char_to_print);
+            buffer += termion::color::Fg(termion::color::Reset).to_string().as_str();
+        }
+        buffer.push('▌');
+    }
+    buffer += Goto(zero_zero.0, zero_zero.1 + 1 + HEIGHT as u16).to_string().as_str();
+    buffer.push('▝');
+    for _ in 0..WIDTH {buffer += "▀";};
+    buffer.push('▘');
+
+    buffer += Goto(zero_zero.0, zero_zero.1 + 2 + HEIGHT as u16).to_string().as_str();
+    buffer += format!("Score: {}", length).as_str();
+
+    write!(stdout, "{}\n", buffer).unwrap();
 }
 
 fn loop1(rx: Receiver<char>) {
@@ -196,16 +212,17 @@ fn loop1(rx: Receiver<char>) {
             _ => y
         };
         
+        //update snake's position
+        board[y][x] = direction as i16 + 4 * length;
         if nx >= WIDTH || ny >= HEIGHT || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
             if grace > 0 {
+                print_board(&board, &mut stdout, &length, apple_pos, grace);
                 grace -= 1;
                 continue;
             }
             break;
         };
 
-        //update snake's position
-        board[y][x] = direction as i16 + 4 * length;
         
         board[ny][nx] = direction as i16 + 4 * length + 4;
 
@@ -222,7 +239,7 @@ fn loop1(rx: Receiver<char>) {
         x = nx.clone();
         y = ny.clone();
 
-        print_board(&board, &mut stdout, &length, apple_pos);
+        print_board(&board, &mut stdout, &length, apple_pos, grace);
 
         grace = 5;
     }
