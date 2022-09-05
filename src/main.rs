@@ -51,8 +51,6 @@ const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
         ['►', '═', '-'],
         ['?', '?', '?']
     ]
-    //empty
-    //[[' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' '], [' ', ' ', ' ']]
 ];
 
 const HEIGHT: usize = 12;
@@ -74,7 +72,7 @@ use termion::{
 use rand::{Rng,SeedableRng,rngs::StdRng};
 
 fn main() {
-    //let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
+    let _stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
 
     let (tx, rx) = sync_channel(2);
 
@@ -156,34 +154,35 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
 }
 
 fn loop1(rx: Receiver<char>) {
-    //this can be the game loop?
-    let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
 
+    let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
     let mut board: Vec<Vec<i16>> = vec![vec![-5 as i16; WIDTH]; HEIGHT];
     let mut direction: usize = 3;
+    let mut new_direction: usize = 3;
     let mut x: usize = 0;
     let mut y: usize = 0;
     let mut nx: usize;
     let mut ny: usize;
     let mut length: i16 = 1;
     let mut apple_pos: (usize, usize) = (WIDTH/2, HEIGHT/2);
-    let mut olength: i16 = 1;
-    let mut grace: bool = true;
+    let mut grace: i8 = 5;
 
     loop {
         thread::sleep(std::time::Duration::from_millis(250));
 
         //after delay, get keys pressed within delay
-        let input_key = match rx.try_recv() {
-            Ok(id) => id,
-            Err(_) => '.',
-        };
-        direction = match input_key {
+        new_direction = match match rx.try_recv() {
+            Ok(key) => key,
+            Err(_) => ' ',
+        } {
             'w' => 0,
             's' => 1,
             'a' => 2,
             'd' => 3,
-            _ => direction
+            _ => new_direction,
+        };
+        if direction/2 != new_direction/2 {
+            direction = new_direction;
         };
         
         nx = match direction as i16 {
@@ -198,12 +197,12 @@ fn loop1(rx: Receiver<char>) {
         };
         
         if nx >= WIDTH || ny >= HEIGHT || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
-            if grace {
-                grace = false;
+            if grace > 0 {
+                grace -= 1;
                 continue;
             }
             break;
-        }
+        };
 
         //update snake's position
         board[y][x] = direction as i16 + 4 * length;
@@ -213,24 +212,19 @@ fn loop1(rx: Receiver<char>) {
         if apple_pos == (nx, ny) {
             length += 1;
             apple_pos = gen_rand(length, &board);
-        }
-        //remove four from all board elements to a minimum of -5 if they aren't already -1
-        if olength == length {
+        } else {
             for row in board.iter_mut() {
                 for cell in row.iter_mut() {
-                    if *cell > -5 {
-                        *cell = (*cell - 4).max(-5);
-                    }
+                    *cell = (*cell - 4).max(-5);
                 }
             }
         }
         x = nx.clone();
         y = ny.clone();
-        olength = length.clone();
 
         print_board(&board, &mut stdout, &length, apple_pos);
 
-        grace = true;
+        grace = 5;
     }
 
     write!(stdout, "Game over!").unwrap();
@@ -255,10 +249,7 @@ fn loop2(tx: SyncSender<char>) {
                     x => {
                         let thread_tx = tx.clone();
 
-                        match thread_tx.try_send(x) {
-                            Ok(_) => (),
-                            Err(_) => (),
-                        };
+                        thread_tx.try_send(x).unwrap();
                     }
                 },
                 _ => {}
