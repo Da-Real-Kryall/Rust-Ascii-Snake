@@ -1,24 +1,5 @@
 #![allow(non_snake_case)] //only for crate name
 
-
-/*
-delay
-
-get next direction
-
-buffer new location
-
-check if new location is valid
-    if not valid and grace is false, make grace true and skip to start of sequence
-
-check if apple is eaten at said location
-    if apple is eaten, set apple eaten to true
-    increment score by one
-    
-if apple is eaten, don't remove four from snake segments
-
-
-*/
 const SWAP: [usize; 4] = [ //could generate with i-i%2+1-i%2 but eeeghh probably not worth it
     1,
     0,
@@ -53,9 +34,6 @@ const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
     ]
 ];
 
-//const HEIGHT: usize = 12;
-//const WIDTH: usize = 24;
-
 extern crate termion;
 
 use std::{
@@ -89,26 +67,22 @@ fn main() {
 }
 
 fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize), grace: i8) {
-    write!(stdout, "{}", termion::clear::All).unwrap();
 
-    
-    
     let mut buffer = String::new();
-    buffer += Goto(0,0).to_string().as_str();
-
-    //buffer += Goto(zero_zero.0, zero_zero.1).to_string().as_str();
-    //buffer.push(CHAR_REFERENCE[1][3][1]);
-    //for _ in 0..WIDTH {buffer.push(CHAR_REFERENCE[2][3][1]);};
-    //buffer.push('▖');
 
     for row_index in 0..board.len() {
-        buffer += Goto(0, (row_index+1) as u16).to_string().as_str();
-        //buffer += "▐";
-        for col_index in 0..board[row_index].len() {
+        buffer += Goto(0, 1+row_index as u16).to_string().as_str();
 
+        for col_index in 0..board[row_index].len() {
+            
+            if (col_index+row_index)%2 == 0 {
+                buffer += termion::color::Bg(termion::color::LightBlack).to_string().as_str();
+            } else {
+                buffer += termion::color::Bg(termion::color::Black).to_string().as_str();
+            }
             let mut char_to_print = match apple_pos == (col_index, row_index) {
                 true => {buffer += termion::color::Fg(termion::color::LightRed).to_string().as_str(); ''},
-                false => ' '//{buffer += termion::color::Fg(termion::color::LightBlack).to_string().as_str();['▒', '░'][(row_index+col_index)%2]}
+                false => ' '
             };
             
             let cell = board[row_index][col_index];
@@ -152,16 +126,7 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
             buffer.push(char_to_print);
             buffer += termion::color::Fg(termion::color::Reset).to_string().as_str();
         }
-        //buffer.push('▌');
     }
-    //buffer += Goto(0, 1+board.len() as u16).to_string().as_str();
-    //buffer += Goto(zero_zero.0, zero_zero.1 + 1 + HEIGHT as u16).to_string().as_str();
-    //buffer.push('▝');
-    //for _ in 0..WIDTH {buffer += "▀";};
-    //buffer.push('▘');
-//
-    //buffer += Goto(zero_zero.0, zero_zero.1 + 2 + HEIGHT as u16).to_string().as_str();
-    //buffer += format!("Score: {}", length).as_str();
 
     write!(stdout, "{}", buffer).unwrap();
 }
@@ -264,10 +229,6 @@ fn loop2(tx: SyncSender<char>) {
                     'q' => break,
                     x => {
                         let thread_tx = tx.clone();
-                        //match thread_tx.send(x)
-
-                            // This will return an error and send
-                            // no message if the buffer is full
                         thread_tx.try_send(x).is_err()
                     }
                 },
