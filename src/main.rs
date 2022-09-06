@@ -53,8 +53,8 @@ const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
     ]
 ];
 
-const HEIGHT: usize = 12;
-const WIDTH: usize = 24;
+//const HEIGHT: usize = 12;
+//const WIDTH: usize = 24;
 
 extern crate termion;
 
@@ -91,23 +91,19 @@ fn main() {
 fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize), grace: i8) {
     write!(stdout, "{}", termion::clear::All).unwrap();
 
-    let zero_zero = (termion::terminal_size().unwrap().0/2 - WIDTH as u16/2 as u16, termion::terminal_size().unwrap().1/2 - HEIGHT as u16/2);
+    
+    
     let mut buffer = String::new();
+    buffer += Goto(0,0).to_string().as_str();
 
-    //if grace != 5 { //add flashing character flag
-    //    buffer += termion::style::Blink.to_string().as_str();
-    //} else {
-    //    buffer += termion::style::NoBlink.to_string().as_str();
-    //}
-
-    buffer += Goto(zero_zero.0, zero_zero.1).to_string().as_str();
-    buffer.push(CHAR_REFERENCE[1][3][1]);
-    for _ in 0..WIDTH {buffer.push(CHAR_REFERENCE[2][3][1]);};
-    buffer.push('▖');
+    //buffer += Goto(zero_zero.0, zero_zero.1).to_string().as_str();
+    //buffer.push(CHAR_REFERENCE[1][3][1]);
+    //for _ in 0..WIDTH {buffer.push(CHAR_REFERENCE[2][3][1]);};
+    //buffer.push('▖');
 
     for row_index in 0..board.len() {
-        buffer += Goto(zero_zero.0, zero_zero.1 + 1 + row_index as u16).to_string().as_str();
-        buffer += "▐";
+        buffer += Goto(0, (row_index+1) as u16).to_string().as_str();
+        //buffer += "▐";
         for col_index in 0..board[row_index].len() {
 
             let mut char_to_print = match apple_pos == (col_index, row_index) {
@@ -122,9 +118,9 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
 
                     let candidates: [i16; 4] = [
                         board[row_index.max(1)-1][col_index],
-                        board[row_index.min(HEIGHT-2)+1][col_index],
+                        board[row_index.min(board.len()-2)+1][col_index],
                         board[row_index][col_index.max(1)-1],
-                        board[row_index][col_index.min(WIDTH-2)+1],
+                        board[row_index][col_index.min(board[row_index].len()-2)+1],
                     ];
                     for i in 0..4 {
                         if (candidates[i]+4)%4 == SWAP[i] as i16 && (candidates[i]+4)/4 == cell/4 {
@@ -135,18 +131,18 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
                     o
                 };
 
-                let segment = match cell / 4  {
-                    0 => 2,
-                    _ => match cell / 4 == *length {
-                        true => 0,
-                        false => 1
+                let segment = match *length - cell / 4  {
+                    0 => 0,
+                    _ => match cell / 4 != 0 {
+                        true => 1,
+                        false => 2
                     }
                 };
                 char_to_print = CHAR_REFERENCE[(cell%4) as usize][origin][segment];
             };
 
             if cell > -1 {
-                buffer += match ((*length - cell/4)%2 == 0, grace != 5) {
+                buffer += match ((*length - cell/4)%2 == 0, grace != 3) {
                     (true, false) => termion::color::Fg(termion::color::LightGreen).to_string(),
                     (false, false) => termion::color::Fg(termion::color::LightYellow).to_string(),
                     (true, true) => termion::color::Fg(termion::color::Green).to_string(),
@@ -156,32 +152,35 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
             buffer.push(char_to_print);
             buffer += termion::color::Fg(termion::color::Reset).to_string().as_str();
         }
-        buffer.push('▌');
+        //buffer.push('▌');
     }
-    buffer += Goto(zero_zero.0, zero_zero.1 + 1 + HEIGHT as u16).to_string().as_str();
-    buffer.push('▝');
-    for _ in 0..WIDTH {buffer += "▀";};
-    buffer.push('▘');
+    //buffer += Goto(0, 1+board.len() as u16).to_string().as_str();
+    //buffer += Goto(zero_zero.0, zero_zero.1 + 1 + HEIGHT as u16).to_string().as_str();
+    //buffer.push('▝');
+    //for _ in 0..WIDTH {buffer += "▀";};
+    //buffer.push('▘');
+//
+    //buffer += Goto(zero_zero.0, zero_zero.1 + 2 + HEIGHT as u16).to_string().as_str();
+    //buffer += format!("Score: {}", length).as_str();
 
-    buffer += Goto(zero_zero.0, zero_zero.1 + 2 + HEIGHT as u16).to_string().as_str();
-    buffer += format!("Score: {}", length).as_str();
-
-    write!(stdout, "{}\n", buffer).unwrap();
+    write!(stdout, "{}", buffer).unwrap();
 }
 
 fn loop1(rx: Receiver<char>) {
 
     let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
-    let mut board: Vec<Vec<i16>> = vec![vec![-5 as i16; WIDTH]; HEIGHT];
+    let mut board: Vec<Vec<i16>> = vec![vec![-5 as i16; termion::terminal_size().unwrap().0 as usize]; termion::terminal_size().unwrap().1 as usize];
     let mut direction: usize = 3;
     let mut new_direction: usize = 3;
     let mut x: usize = 0;
     let mut y: usize = 0;
     let mut nx: usize;
     let mut ny: usize;
-    let mut length: i16 = 1;
-    let mut apple_pos: (usize, usize) = (WIDTH/2, HEIGHT/2);
-    let mut grace: i8 = 5;
+    let mut length: i16 = 0;
+    let mut apple_pos: (usize, usize) = gen_rand(length, &board);// (board.len()/2, board[0].len()/2);
+    let mut grace: i8 = 3;
+
+    write!(stdout, "{}", termion::cursor::Hide).unwrap();
 
     loop {
         thread::sleep(std::time::Duration::from_millis(250));
@@ -214,7 +213,7 @@ fn loop1(rx: Receiver<char>) {
         
         //update snake's position
         board[y][x] = direction as i16 + 4 * length;
-        if nx >= WIDTH || ny >= HEIGHT || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
+        if nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
             if grace > 0 {
                 print_board(&board, &mut stdout, &length, apple_pos, grace);
                 grace -= 1;
@@ -241,7 +240,7 @@ fn loop1(rx: Receiver<char>) {
 
         print_board(&board, &mut stdout, &length, apple_pos, grace);
 
-        grace = 5;
+        grace = 3;
     }
 
     write!(stdout, "Game over!").unwrap();
@@ -255,33 +254,36 @@ fn loop2(tx: SyncSender<char>) {
 
     for c in stdin.events() {
         let evt = c.unwrap();
-        match evt {
+        let _: bool = match evt {
             Event::Key(ke) => match ke {
-                Key::Up => tx.send('w').unwrap(),
-                Key::Down => tx.send('s').unwrap(),
-                Key::Left => tx.send('a').unwrap(),
-                Key::Right => tx.send('d').unwrap(),
+                Key::Up => {tx.try_send('w').is_err()},
+                Key::Down => {tx.try_send('s').is_err()},
+                Key::Left => {tx.try_send('a').is_err()},
+                Key::Right => {tx.try_send('d').is_err()},
                 Key::Char(k) => match k {
                     'q' => break,
                     x => {
                         let thread_tx = tx.clone();
+                        //match thread_tx.send(x)
 
-                        thread_tx.try_send(x).unwrap();
+                            // This will return an error and send
+                            // no message if the buffer is full
+                        thread_tx.try_send(x).is_err()
                     }
                 },
-                _ => {}
+                _ => {false}
             },
-            _ => {}
-        }
+            _ => {false}
+        };
     }
 }
 
 fn gen_rand(seed: i16, board: &Vec<Vec<i16>>) -> (usize, usize) {
 
     let mut rng = StdRng::seed_from_u64(seed as u64);
-    let mut index = rng.gen_range(0, WIDTH*HEIGHT - seed as usize);
-    for row_index in 0..HEIGHT {
-        for col_index in 0..WIDTH {
+    let mut index = rng.gen_range(0, board.len()*board[0].len() - seed as usize);
+    for row_index in 0..board.len() {
+        for col_index in 0..board[0].len() {
             if board[row_index][col_index] <= -1 {
                 index -= 1;
             }
