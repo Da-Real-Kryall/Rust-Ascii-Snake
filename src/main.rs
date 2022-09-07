@@ -75,11 +75,11 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
 
         for col_index in 0..board[row_index].len() {
             
-            if (col_index+row_index)%2 == 0 {
-                buffer += termion::color::Bg(termion::color::LightBlack).to_string().as_str();
-            } else {
-                buffer += termion::color::Bg(termion::color::Black).to_string().as_str();
-            }
+            //if (col_index+row_index)%2 == 0 {
+            //    buffer += termion::color::Bg(termion::color::LightBlack).to_string().as_str();
+            //} else {
+            //    buffer += termion::color::Bg(termion::color::Black).to_string().as_str();
+            //}
             let mut char_to_print = match apple_pos == (col_index, row_index) {
                 true => {buffer += termion::color::Fg(termion::color::LightRed).to_string().as_str(); ''},
                 false => ' '
@@ -135,21 +135,21 @@ fn loop1(rx: Receiver<char>) {
 
     let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
     let mut board: Vec<Vec<i16>> = vec![vec![-5 as i16; termion::terminal_size().unwrap().0 as usize]; termion::terminal_size().unwrap().1 as usize];
+
     let mut direction: usize = 3;
     let mut new_direction: usize = 3;
     let mut x: usize = 0;
     let mut y: usize = 0;
     let mut nx: usize;
     let mut ny: usize;
-    let mut length: i16 = 0;
+    let mut length: i16 = 1;
     let mut apple_pos: (usize, usize) = gen_rand(length, &board);// (board.len()/2, board[0].len()/2);
     let mut grace: i8 = 3;
 
     write!(stdout, "{}", termion::cursor::Hide).unwrap();
 
     loop {
-        thread::sleep(std::time::Duration::from_millis(250));
-
+        thread::sleep(std::time::Duration::from_millis(150));
         //after delay, get keys pressed within delay
         new_direction = match match rx.try_recv() {
             Ok(key) => key,
@@ -159,36 +159,103 @@ fn loop1(rx: Receiver<char>) {
             's' => 1,
             'a' => 2,
             'd' => 3,
-            _ => new_direction,
+            _ => direction,
         };
-        if direction/2 != new_direction/2 {
-            direction = new_direction;
-        };
+
+        ////if (direction/2 != new_direction/2) && (board[ny][nx]  {
+        //    direction = new_direction;
+        ////};
         
-        nx = match direction as i16 {
+        nx = match new_direction as i16 {
             2 => x-1,
             3 => x+1,
             _ => x
         };
-        ny = match direction as i16 {
+        ny = match new_direction as i16 {
             0 => y-1,
             1 => y+1,
             _ => y
         };
-        
-        //update snake's position
-        board[y][x] = direction as i16 + 4 * length;
-        if nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
-            if grace > 0 {
-                print_board(&board, &mut stdout, &length, apple_pos, grace);
-                grace -= 1;
-                continue;
+        if (nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0) && direction != new_direction {
+            //check if the direction just changed
+            if direction != new_direction { //if the player did changge the direction, don't punish them and don't change the direction
+                //new_direction = direction;
+                nx = match direction as i16 {
+                    2 => x-1,
+                    3 => x+1,
+                    _ => x
+                };
+                ny = match direction as i16 {
+                    0 => y-1,
+                    1 => y+1,
+                    _ => y
+                };
+                new_direction = direction;
             }
-            break;
-        };
+        }
+        //board[ny][nx] = new_direction as i16 + 4 * length + 4;
+        //if snake is overlapping the border or the snake:
+        if nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
+            //check if the direction just changed
+            if direction != new_direction { //if the player did changge the direction, don't punish them and don't change the direction
+                //new_direction = direction;
+                nx = match direction as i16 {
+                    2 => x-1,
+                    3 => x+1,
+                    _ => x
+                };
+                ny = match direction as i16 {
+                    0 => y-1,
+                    1 => y+1,
+                    _ => y
+                };
+                new_direction = direction;
+            } else { //if the player didn't change the direction, punish them
+                if grace == 0 {
+                    break;
+                }
+                grace -= 1;
+                print_board(&board, &mut stdout, &length, apple_pos, grace);
+                continue;
+                
+            }
+        }
 
         
-        board[ny][nx] = direction as i16 + 4 * length + 4;
+        
+        //board[y][x] = direction as i16 + 4 * length;
+        board[ny][nx] = new_direction as i16 + 4 * length + 4;
+        board[y][x] = new_direction as i16 + 4 * length;
+        //
+        //print_board(&board, &mut stdout, &length, apple_pos, grace);
+        
+
+        //if nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
+        //    if grace > 0 {
+        //        board[y][x] = direction as i16 + 4 * length;
+        //        print_board(&board, &mut stdout, &length, apple_pos, grace);
+        //        if new_direction == direction { //make nx and ny based off of direction
+        //            grace -= 1;
+        //            continue;
+        //        }
+        //        nx = match direction as i16 {
+        //            2 => x-1,
+        //            3 => x+1,
+        //            _ => x
+        //        };
+        //        ny = match direction as i16 {
+        //            0 => y-1,
+        //            1 => y+1,
+        //            _ => y
+        //        };
+        //        new_direction = direction;
+        //    }
+        //    else if new_direction != direction {
+        //        break;
+        //    }
+        //};
+//
+        //board[ny][nx] = direction as i16 + 4 * length + 4;
 
         if apple_pos == (nx, ny) {
             length += 1;
@@ -202,15 +269,14 @@ fn loop1(rx: Receiver<char>) {
         }
         x = nx.clone();
         y = ny.clone();
+        direction = new_direction;
 
         print_board(&board, &mut stdout, &length, apple_pos, grace);
 
         grace = 3;
     }
-
-    write!(stdout, "Game over!").unwrap();
     stdout.flush().unwrap();
-
+    panic!("Game over!");
 
 }
 
