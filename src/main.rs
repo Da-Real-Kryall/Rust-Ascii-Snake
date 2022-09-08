@@ -1,11 +1,29 @@
 #![allow(non_snake_case)] //only for crate name
 
+extern crate termion;
+
+use std::{
+    io::{stdin, stdout, Write},
+    sync::mpsc::{sync_channel, Receiver, SyncSender},
+    thread, string,
+};
+use termion::{
+    cursor::Goto,
+    event::{Event, Key},
+    input::{MouseTerminal, TermRead},
+    raw::IntoRawMode,
+    color::{Reset, Bg, Fg, LightGreen, Green, LightRed, Red, LightBlue, Blue, LightYellow, Yellow, LightCyan, Cyan, LightMagenta, Magenta},
+};
+
+use rand::{Rng,SeedableRng,rngs::StdRng};
+
 const SWAP: [usize; 4] = [ //could generate with i-i%2+1-i%2 but eeeghh probably not worth it
     1,
     0,
     3,
     2
 ];
+
 
 const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
     [ //from up
@@ -34,22 +52,6 @@ const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
     ]
 ];
 
-extern crate termion;
-
-use std::{
-    io::{stdin, stdout, Write},
-    sync::mpsc::{sync_channel, Receiver, SyncSender},
-    thread,
-};
-use termion::{
-    cursor::Goto,
-    event::{Event, Key},
-    input::{MouseTerminal, TermRead},
-    raw::IntoRawMode,
-};
-
-use rand::{Rng,SeedableRng,rngs::StdRng};
-
 fn main() {
     let _stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
 
@@ -66,22 +68,25 @@ fn main() {
     bleh.join().expect("oops! the child thread panicked");
 }
 
-fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize), grace: i8) {
+fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize), grace: i8, colours: [String; 4]) {
 
     let mut buffer = String::new();
+
+
 
     for row_index in 0..board.len() {
         buffer += Goto(0, 1+row_index as u16).to_string().as_str();
 
         for col_index in 0..board[row_index].len() {
-            
+
+            //this makes a checkered background (but it hinders performance)
             //if (col_index+row_index)%2 == 0 {
             //    buffer += termion::color::Bg(termion::color::LightBlack).to_string().as_str();
             //} else {
             //    buffer += termion::color::Bg(termion::color::Black).to_string().as_str();
             //}
             let mut char_to_print = match apple_pos == (col_index, row_index) {
-                true => {buffer += termion::color::Fg(termion::color::LightRed).to_string().as_str(); ''},
+                true => {buffer += Fg(LightRed).to_string().as_str(); ''},
                 false => ' '
             };
             
@@ -117,14 +122,14 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
 
             if cell > -1 {
                 buffer += match ((*length - cell/4)%2 == 0, grace != 3) {
-                    (true, false) => termion::color::Fg(termion::color::LightGreen).to_string(),
-                    (false, false) => termion::color::Fg(termion::color::LightYellow).to_string(),
-                    (true, true) => termion::color::Fg(termion::color::Green).to_string(),
-                    (false, true) => termion::color::Fg(termion::color::Yellow).to_string()
-                }.as_str();
+                    (true, false) => colours[0].as_str(),
+                    (false, false) => colours[1].as_str(),
+                    (true, true) => colours[2].as_str(),
+                    (false, true) => colours[3].as_str()
+                };
             }
             buffer.push(char_to_print);
-            buffer += termion::color::Fg(termion::color::Reset).to_string().as_str();
+            buffer += Fg(Reset).to_string().as_str();
         }
     }
 
@@ -137,14 +142,40 @@ fn loop1(rx: Receiver<char>) {
     let mut board: Vec<Vec<i16>> = vec![vec![-5 as i16; termion::terminal_size().unwrap().0 as usize]; termion::terminal_size().unwrap().1 as usize];
 
     let mut direction: usize = 3;
-    let mut new_direction: usize = 3;
+    let mut new_direction: usize;
     let mut x: usize = 0;
     let mut y: usize = 0;
     let mut nx: usize;
     let mut ny: usize;
-    let mut length: i16 = 1;
+    let mut length: i16 = 0;
     let mut apple_pos: (usize, usize) = gen_rand(length, &board);// (board.len()/2, board[0].len()/2);
     let mut grace: i8 = 3;
+
+    let colour_index: usize = rand::thread_rng().gen_range(0, 4);
+    //strings that are appended to a print buffer
+
+    let colours: [[String; 4]; 4] = [
+        [
+            Fg(LightGreen).to_string(), Fg(LightYellow).to_string(),
+            Fg(Green).to_string(), Fg(Yellow).to_string(),
+        ],
+        [
+            Fg(LightRed).to_string(), Fg(LightBlue).to_string(),
+            Fg(Red).to_string(), Fg(Blue).to_string(),
+        ],
+        [
+            Fg(LightMagenta).to_string(), Fg(LightCyan).to_string(),
+            Fg(Magenta).to_string(), Fg(Cyan).to_string(),
+        ],
+        //[
+        //    Fg(LightOrange).to_string(), Fg(LightMagenta).to_string(),
+        //    Fg(Orange).to_string(), Fg(Magenta).to_string(),
+        //],
+        [
+            Fg(LightCyan).to_string(), Fg(LightYellow).to_string(),
+            Fg(Cyan).to_string(), Fg(Yellow).to_string(),
+        ],
+    ];
 
     write!(stdout, "{}", termion::cursor::Hide).unwrap();
 
@@ -193,7 +224,7 @@ fn loop1(rx: Receiver<char>) {
                 new_direction = direction;
             }
         }
-        //board[ny][nx] = new_direction as i16 + 4 * length + 4;
+        
         //if snake is overlapping the border or the snake:
         if nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
             //check if the direction just changed
@@ -215,47 +246,14 @@ fn loop1(rx: Receiver<char>) {
                     break;
                 }
                 grace -= 1;
-                print_board(&board, &mut stdout, &length, apple_pos, grace);
+                print_board(&board, &mut stdout, &length, apple_pos, grace, colours[colour_index].clone());
                 continue;
                 
             }
         }
 
-        
-        
-        //board[y][x] = direction as i16 + 4 * length;
         board[ny][nx] = new_direction as i16 + 4 * length + 4;
         board[y][x] = new_direction as i16 + 4 * length;
-        //
-        //print_board(&board, &mut stdout, &length, apple_pos, grace);
-        
-
-        //if nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
-        //    if grace > 0 {
-        //        board[y][x] = direction as i16 + 4 * length;
-        //        print_board(&board, &mut stdout, &length, apple_pos, grace);
-        //        if new_direction == direction { //make nx and ny based off of direction
-        //            grace -= 1;
-        //            continue;
-        //        }
-        //        nx = match direction as i16 {
-        //            2 => x-1,
-        //            3 => x+1,
-        //            _ => x
-        //        };
-        //        ny = match direction as i16 {
-        //            0 => y-1,
-        //            1 => y+1,
-        //            _ => y
-        //        };
-        //        new_direction = direction;
-        //    }
-        //    else if new_direction != direction {
-        //        break;
-        //    }
-        //};
-//
-        //board[ny][nx] = direction as i16 + 4 * length + 4;
 
         if apple_pos == (nx, ny) {
             length += 1;
@@ -271,7 +269,7 @@ fn loop1(rx: Receiver<char>) {
         y = ny.clone();
         direction = new_direction;
 
-        print_board(&board, &mut stdout, &length, apple_pos, grace);
+        print_board(&board, &mut stdout, &length, apple_pos, grace, colours[colour_index].clone());
 
         grace = 3;
     }
