@@ -108,16 +108,17 @@ fn print_board(
                 //random choice between ansi red yellow and green
                 print_buffer.push_str(&format!(
                     "\x1b[91m{}",
-                    //{ rng.gen_range(1, 4) + 90 },
-                    //if rng.gen_range(1, 50) == 45 {
-                    //    'ඞ'
-                    //} else {
+                    //one in 50 chance seeded with applle_pos.0 * apple_pos.1
+                    //if it's 35, use a ඞ instead of an apple
+                    if StdRng::seed_from_u64((apple_pos.0 * apple_pos.1) as u64).gen_range(0, 50) == 35 {
+                        'ඞ'
+                    } else {
                         match OS {
                             "linux" => '@',
                             "macos" => '',
                             _ => 'ඞ',
                         }
-                    //}
+                    }
                 ));
             }
             //if snake is here, write the snake
