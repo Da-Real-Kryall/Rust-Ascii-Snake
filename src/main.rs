@@ -69,7 +69,7 @@ fn main() {
 
     let (tx, rx) = sync_channel(2);
 
-    thread::spawn(move || {
+    let input = thread::spawn(move || {
         input_loop(tx);
     });
 
@@ -77,7 +77,8 @@ fn main() {
         game_loop(rx);
     });
 
-    game.join().expect("skill issue");
+    game.join().unwrap();
+    input.join().unwrap();
 }
 
 fn print_board(
@@ -206,6 +207,7 @@ fn game_loop(rx: Receiver<char>) {
             Ok(key) => key,
             Err(_) => ' ',
         } {
+            'q' => break,
             'w' => 0,
             's' => 1,
             'a' => 2,
@@ -304,7 +306,7 @@ fn game_loop(rx: Receiver<char>) {
     }
     write!(stdout, "\x1b[0m{}", termion::cursor::Show).unwrap();
     stdout.flush().unwrap();
-    panic!("Game over!");
+    panic!("\x1b[101;97;1;5mskill issue\x1b[0;1m [score {}]\x1b[0m", length);
 }
 
 fn input_loop(tx: SyncSender<char>) {
@@ -319,7 +321,6 @@ fn input_loop(tx: SyncSender<char>) {
                 Key::Left => tx.try_send('a').is_err(),
                 Key::Right => tx.try_send('d').is_err(),
                 Key::Char(k) => match k {
-                    'q' => break,
                     x => {
                         let thread_tx = tx.clone();
                         thread_tx.try_send(x).is_err()
