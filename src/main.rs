@@ -3,53 +3,65 @@
 extern crate termion;
 
 use std::{
+    env::consts::OS,
     io::{stdin, stdout, Write},
     sync::mpsc::{sync_channel, Receiver, SyncSender},
-    thread, string,
+    thread,
 };
 use termion::{
     cursor::Goto,
     event::{Event, Key},
     input::{MouseTerminal, TermRead},
     raw::IntoRawMode,
-    color::{Reset, Bg, Fg, LightGreen, Green, LightRed, Red, LightBlue, Blue, LightYellow, Yellow, LightCyan, Cyan, LightMagenta, Magenta},
 };
 
-use rand::{Rng,SeedableRng,rngs::StdRng};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 
-const SWAP: [usize; 4] = [ //could generate with i-i%2+1-i%2 but eeeghh probably not worth it
-    1,
-    0,
-    3,
-    2
+const SWAP: [usize; 4] = [
+    //could generate with i-i%2+1-i%2 but eeeghh probably not worth it
+    1, 0, 3, 2,
 ];
 
+const COLOUR_PALETTES: [[u8; 2]; 8] = [
+    [3, 4], //yellow and blue
+    [5, 2], //magenta and green
+    [6, 1], //cyan and red
+    [1, 2], //red and green
+    [2, 3], //green and yellow
+    [4, 6], //blue and cyan
+    [3, 6], //yellow and cyan
+    [1, 4], //red and blue
+];
 
-const CHAR_REFERENCE : [[[char; 3]; 4]; 4] = [
-    [ //from up
-        ['?', '?', '?'], //to up
-        ['▲', '║', '|'], //to down
+const CHAR_REFERENCE: [[[char; 3]; 4]; 4] = [
+    [
+        //from up
+        ['?', '?', '?'],       //to up
+        ['▲', '║', '│'], //to down
         ['▲', '╝', '┘'], //to left
-        ['▲', '╚', '└'] //to right
+        ['▲', '╚', '└'], //to right
     ],
-    [ //from down
-        ['▼', '║', '|'],
+    [
+        //from down
+        ['▼', '║', '│'],
         ['?', '?', '?'],
         ['▼', '╗', '┐'],
-        ['▼', '╔', '┌']
+        ['▼', '╔', '┌'],
     ],
-    [ //from left
+    [
+        //from left
         ['◄', '╝', '┘'],
         ['◄', '╗', '┐'],
         ['?', '?', '?'],
-        ['◄', '═', '-']
+        ['◄', '═', '–'],
     ],
-    [ //from right
+    [
+        //from right
         ['►', '╚', '└'],
         ['►', '╔', '┌'],
-        ['►', '═', '-'],
-        ['?', '?', '?']
-    ]
+        ['►', '═', '–'],
+        ['?', '?', '?'],
+    ],
 ];
 
 fn main() {
@@ -68,41 +80,61 @@ fn main() {
     bleh.join().expect("oops! the child thread panicked");
 }
 
-fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>, length: &i16, apple_pos: (usize, usize), grace: i8, colours: [String; 4]) {
-
-    let mut buffer = String::new();
-
+fn print_board(
+    board: &Vec<Vec<i16>>,
+    stdout: &mut MouseTerminal<termion::raw::RawTerminal<std::io::Stdout>>,
+    length: &i16,
+    apple_pos: (usize, usize),
+    grace: i8,
+    colour_seed: usize,
+) {
+    let mut print_buffer: String = String::new();
+    //let mut rng = StdRng::seed_from_u64((apple_pos.1 * apple_pos.0) as u64);
 
 
     for row_index in 0..board.len() {
-        buffer += Goto(0, 1+row_index as u16).to_string().as_str();
-
         for col_index in 0..board[row_index].len() {
+            //if the apple or snake is to the left already, don't add a goto
+            //else, add a goto to the correct position
+            if col_index == 0 || !(board[row_index][col_index.max(1) - 1] != -5
+                || apple_pos == (col_index.max(1) - 1, row_index))
+            {
+                print_buffer.push_str(&format!("{}", Goto(col_index as u16+1, row_index as u16+1)));
+            }
 
-            //this makes a checkered background (but it hinders performance)
-            //if (col_index+row_index)%2 == 0 {
-            //    buffer += termion::color::Bg(termion::color::LightBlack).to_string().as_str();
-            //} else {
-            //    buffer += termion::color::Bg(termion::color::Black).to_string().as_str();
-            //}
-            let mut char_to_print = match apple_pos == (col_index, row_index) {
-                true => {buffer += Fg(LightRed).to_string().as_str(); ''},
-                false => ' '
-            };
-            
+            //if the apple is here, write the apple
             let cell = board[row_index][col_index];
-            if cell > -1 {
+            if apple_pos == (col_index, row_index) {
+                //random choice between ansi red yellow and green
+                print_buffer.push_str(&format!(
+                    "\x1b[91m{}",
+                    //{ rng.gen_range(1, 4) + 90 },
+                    //if rng.gen_range(1, 50) == 45 {
+                    //    'ඞ'
+                    //} else {
+                        match OS {
+                            "linux" => '@',
+                            "macos" => '',
+                            _ => 'ඞ',
+                        }
+                    //}
+                ));
+            }
+            //if snake is here, write the snake
+            else if cell > -1 {
                 let origin: usize = {
-                    let mut o = SWAP[(cell.clone()%4) as usize];
+                    let mut o = SWAP[(cell.clone() % 4) as usize];
 
                     let candidates: [i16; 4] = [
-                        board[row_index.max(1)-1][col_index],
-                        board[row_index.min(board.len()-2)+1][col_index],
-                        board[row_index][col_index.max(1)-1],
-                        board[row_index][col_index.min(board[row_index].len()-2)+1],
+                        board[row_index.max(1) - 1][col_index],
+                        board[row_index.min(board.len() - 2) + 1][col_index],
+                        board[row_index][col_index.max(1) - 1],
+                        board[row_index][col_index.min(board[row_index].len() - 2) + 1],
                     ];
                     for i in 0..4 {
-                        if (candidates[i]+4)%4 == SWAP[i] as i16 && (candidates[i]+4)/4 == cell/4 {
+                        if (candidates[i] + 4) % 4 == SWAP[i] as i16
+                            && (candidates[i] + 4) / 4 == cell / 4
+                        {
                             o = i;
                             break;
                         }
@@ -110,36 +142,35 @@ fn print_board(board: &Vec<Vec<i16>>, stdout: &mut MouseTerminal<termion::raw::R
                     o
                 };
 
-                let segment = match *length - cell / 4  {
+                let segment = match *length - cell / 4 {
                     0 => 0,
                     _ => match cell / 4 != 0 {
                         true => 1,
-                        false => 2
-                    }
+                        false => 2,
+                    },
                 };
-                char_to_print = CHAR_REFERENCE[(cell%4) as usize][origin][segment];
-            };
 
-            if cell > -1 {
-                buffer += match ((*length - cell/4)%2 == 0, grace != 3) {
-                    (true, false) => colours[0].as_str(),
-                    (false, false) => colours[1].as_str(),
-                    (true, true) => colours[2].as_str(),
-                    (false, true) => colours[3].as_str()
-                };
+                print_buffer.push_str(&format!(
+                    "\x1b[{}m{}",
+                    COLOUR_PALETTES[colour_seed][(length - cell / 4) as usize % 2]
+                        + if grace == 3 { 90 } else { 30 },
+                    CHAR_REFERENCE[(cell % 4) as usize][origin][segment]
+                ));
+            } else if cell > -5 {
+                print_buffer.push_str(" ");
             }
-            buffer.push(char_to_print);
-            buffer += Fg(Reset).to_string().as_str();
         }
     }
-
-    write!(stdout, "{}", buffer).unwrap();
+    write!(stdout, "{}", print_buffer).unwrap();
 }
 
 fn loop1(rx: Receiver<char>) {
-
     let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
-    let mut board: Vec<Vec<i16>> = vec![vec![-5 as i16; termion::terminal_size().unwrap().0 as usize]; termion::terminal_size().unwrap().1 as usize];
+    let mut board: Vec<Vec<i16>> =
+        vec![
+            vec![-5 as i16; termion::terminal_size().unwrap().0 as usize];
+            termion::terminal_size().unwrap().1 as usize
+        ];
 
     let mut direction: usize = 3;
     let mut new_direction: usize;
@@ -148,36 +179,19 @@ fn loop1(rx: Receiver<char>) {
     let mut nx: usize;
     let mut ny: usize;
     let mut length: i16 = 0;
-    let mut apple_pos: (usize, usize) = gen_rand(length, &board);// (board.len()/2, board[0].len()/2);
+    let mut apple_pos: (usize, usize) = gen_rand(length, &board); // (board.len()/2, board[0].len()/2);
     let mut grace: i8 = 3;
 
-    let colour_index: usize = rand::thread_rng().gen_range(0, 4);
-    //strings that are appended to a print buffer
-
-    let colours: [[String; 4]; 4] = [
-        [
-            Fg(LightGreen).to_string(), Fg(LightYellow).to_string(),
-            Fg(Green).to_string(), Fg(Yellow).to_string(),
-        ],
-        [
-            Fg(LightRed).to_string(), Fg(LightBlue).to_string(),
-            Fg(Red).to_string(), Fg(Blue).to_string(),
-        ],
-        [
-            Fg(LightMagenta).to_string(), Fg(LightCyan).to_string(),
-            Fg(Magenta).to_string(), Fg(Cyan).to_string(),
-        ],
-        //[
-        //    Fg(LightOrange).to_string(), Fg(LightMagenta).to_string(),
-        //    Fg(Orange).to_string(), Fg(Magenta).to_string(),
-        //],
-        [
-            Fg(LightCyan).to_string(), Fg(LightYellow).to_string(),
-            Fg(Cyan).to_string(), Fg(Yellow).to_string(),
-        ],
-    ];
+    let seed: usize = rand::thread_rng().gen_range(0, 8);
 
     write!(stdout, "{}", termion::cursor::Hide).unwrap();
+
+    //print spaces until the board is full
+    for _ in 0..board.len() {
+        for _ in 0..board[0].len() {
+            print!(" ");
+        }
+    }
 
     loop {
         thread::sleep(std::time::Duration::from_millis(150));
@@ -193,62 +207,71 @@ fn loop1(rx: Receiver<char>) {
             _ => direction,
         };
 
-        ////if (direction/2 != new_direction/2) && (board[ny][nx]  {
-        //    direction = new_direction;
-        ////};
-        
         nx = match new_direction as i16 {
-            2 => x-1,
-            3 => x+1,
-            _ => x
+            2 => x - 1,
+            3 => x + 1,
+            _ => x,
         };
         ny = match new_direction as i16 {
-            0 => y-1,
-            1 => y+1,
-            _ => y
+            0 => y - 1,
+            1 => y + 1,
+            _ => y,
         };
-        if (nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0) && direction != new_direction {
+        if (nx >= board[0].len()
+            || ny >= board.len()
+            || nx == usize::MAX
+            || ny == usize::MAX
+            || board[ny][nx] / 4 > 0)
+            && direction != new_direction
+        {
             //check if the direction just changed
-            if direction != new_direction { //if the player did changge the direction, don't punish them and don't change the direction
+            if direction != new_direction {
+                //if the player did changge the direction, don't punish them and don't change the direction
                 //new_direction = direction;
                 nx = match direction as i16 {
-                    2 => x-1,
-                    3 => x+1,
-                    _ => x
+                    2 => x - 1,
+                    3 => x + 1,
+                    _ => x,
                 };
                 ny = match direction as i16 {
-                    0 => y-1,
-                    1 => y+1,
-                    _ => y
+                    0 => y - 1,
+                    1 => y + 1,
+                    _ => y,
                 };
                 new_direction = direction;
             }
         }
-        
+
         //if snake is overlapping the border or the snake:
-        if nx >= board[0].len() || ny >= board.len() || nx == usize::MAX || ny == usize::MAX || board[ny][nx] / 4 > 0 {
+        if nx >= board[0].len()
+            || ny >= board.len()
+            || nx == usize::MAX
+            || ny == usize::MAX
+            || board[ny][nx] / 4 > 0
+        {
             //check if the direction just changed
-            if direction != new_direction { //if the player did changge the direction, don't punish them and don't change the direction
+            if direction != new_direction {
+                //if the player did changge the direction, don't punish them and don't change the direction
                 //new_direction = direction;
                 nx = match direction as i16 {
-                    2 => x-1,
-                    3 => x+1,
-                    _ => x
+                    2 => x - 1,
+                    3 => x + 1,
+                    _ => x,
                 };
                 ny = match direction as i16 {
-                    0 => y-1,
-                    1 => y+1,
-                    _ => y
+                    0 => y - 1,
+                    1 => y + 1,
+                    _ => y,
                 };
                 new_direction = direction;
-            } else { //if the player didn't change the direction, punish them
+            } else {
+                //if the player didn't change the direction, punish them
                 if grace == 0 {
                     break;
                 }
                 grace -= 1;
-                print_board(&board, &mut stdout, &length, apple_pos, grace, colours[colour_index].clone());
+                print_board(&board, &mut stdout, &length, apple_pos, grace, seed);
                 continue;
-                
             }
         }
 
@@ -269,13 +292,12 @@ fn loop1(rx: Receiver<char>) {
         y = ny.clone();
         direction = new_direction;
 
-        print_board(&board, &mut stdout, &length, apple_pos, grace, colours[colour_index].clone());
+        print_board(&board, &mut stdout, &length, apple_pos, grace, seed);
 
         grace = 3;
     }
     stdout.flush().unwrap();
     panic!("Game over!");
-
 }
 
 fn loop2(tx: SyncSender<char>) {
@@ -285,10 +307,10 @@ fn loop2(tx: SyncSender<char>) {
         let evt = c.unwrap();
         let _: bool = match evt {
             Event::Key(ke) => match ke {
-                Key::Up => {tx.try_send('w').is_err()},
-                Key::Down => {tx.try_send('s').is_err()},
-                Key::Left => {tx.try_send('a').is_err()},
-                Key::Right => {tx.try_send('d').is_err()},
+                Key::Up => tx.try_send('w').is_err(),
+                Key::Down => tx.try_send('s').is_err(),
+                Key::Left => tx.try_send('a').is_err(),
+                Key::Right => tx.try_send('d').is_err(),
                 Key::Char(k) => match k {
                     'q' => break,
                     x => {
@@ -296,17 +318,16 @@ fn loop2(tx: SyncSender<char>) {
                         thread_tx.try_send(x).is_err()
                     }
                 },
-                _ => {false}
+                _ => false,
             },
-            _ => {false}
+            _ => false,
         };
     }
 }
 
 fn gen_rand(seed: i16, board: &Vec<Vec<i16>>) -> (usize, usize) {
-
     let mut rng = StdRng::seed_from_u64(seed as u64);
-    let mut index = rng.gen_range(0, board.len()*board[0].len() - seed as usize);
+    let mut index = rng.gen_range(0, board.len() * board[0].len() - seed as usize);
     for row_index in 0..board.len() {
         for col_index in 0..board[0].len() {
             if board[row_index][col_index] <= -1 {
