@@ -69,15 +69,15 @@ fn main() {
 
     let (tx, rx) = sync_channel(2);
 
-    let bleh = thread::spawn(move || {
-        loop2(tx);
+    thread::spawn(move || {
+        input_loop(tx);
     });
 
-    thread::spawn(|| {
-        loop1(rx);
+    let game = thread::spawn(|| {
+        game_loop(rx);
     });
 
-    bleh.join().expect("oops! the child thread panicked");
+    game.join().expect("skill issue");
 }
 
 fn print_board(
@@ -91,15 +91,18 @@ fn print_board(
     let mut print_buffer: String = String::new();
     //let mut rng = StdRng::seed_from_u64((apple_pos.1 * apple_pos.0) as u64);
 
-
     for row_index in 0..board.len() {
         for col_index in 0..board[row_index].len() {
             //if the apple or snake is to the left already, don't add a goto
             //else, add a goto to the correct position
-            if col_index == 0 || !(board[row_index][col_index.max(1) - 1] != -5
-                || apple_pos == (col_index.max(1) - 1, row_index))
+            if col_index == 0
+                || !(board[row_index][col_index.max(1) - 1] != -5
+                    || apple_pos == (col_index.max(1) - 1, row_index))
             {
-                print_buffer.push_str(&format!("{}", Goto(col_index as u16+1, row_index as u16+1)));
+                print_buffer.push_str(&format!(
+                    "{}",
+                    Goto(col_index as u16 + 1, row_index as u16 + 1)
+                ));
             }
 
             //if the apple is here, write the apple
@@ -110,7 +113,9 @@ fn print_board(
                     "\x1b[91m{}",
                     //one in 50 chance seeded with applle_pos.0 * apple_pos.1
                     //if it's 35, use a ඞ instead of an apple
-                    if StdRng::seed_from_u64((apple_pos.0 * apple_pos.1) as u64).gen_range(0, 50) == 35 {
+                    if StdRng::seed_from_u64((apple_pos.0 * apple_pos.1) as u64).gen_range(0, 50)
+                        == 35
+                    {
                         'ඞ'
                     } else {
                         match OS {
@@ -165,7 +170,7 @@ fn print_board(
     write!(stdout, "{}", print_buffer).unwrap();
 }
 
-fn loop1(rx: Receiver<char>) {
+fn game_loop(rx: Receiver<char>) {
     let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
     let mut board: Vec<Vec<i16>> =
         vec![
@@ -228,7 +233,7 @@ fn loop1(rx: Receiver<char>) {
             //check if the direction just changed
             if direction != new_direction {
                 //if the player did changge the direction, don't punish them and don't change the direction
-                //new_direction = direction;
+
                 nx = match direction as i16 {
                     2 => x - 1,
                     3 => x + 1,
@@ -297,11 +302,12 @@ fn loop1(rx: Receiver<char>) {
 
         grace = 3;
     }
+    write!(stdout, "\x1b[0m{}", termion::cursor::Show).unwrap();
     stdout.flush().unwrap();
     panic!("Game over!");
 }
 
-fn loop2(tx: SyncSender<char>) {
+fn input_loop(tx: SyncSender<char>) {
     let stdin = stdin();
 
     for c in stdin.events() {
