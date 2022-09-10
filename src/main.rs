@@ -114,15 +114,15 @@ fn print_board(
                     "\x1b[91m{}",
                     //one in 50 chance seeded with applle_pos.0 * apple_pos.1
                     //if it's 35, use a ඞ instead of an apple
-                    if StdRng::seed_from_u64((apple_pos.0 * apple_pos.1) as u64).gen_range(0, 50)
+                    if StdRng::seed_from_u64((apple_pos.0 + board.len()*apple_pos.1 + length) as u64).gen_range(0, 50)
                         == 35
                     {
                         'ඞ'
                     } else {
                         match OS {
-                            "linux" => '@',
+                            "linux" => 'Ó',
                             "macos" => '',
-                            _ => 'ඞ',
+                            _ => 'Ó',
                         }
                     }
                 ));
