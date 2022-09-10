@@ -120,9 +120,9 @@ fn print_board(
                         'ඞ'
                     } else {
                         match OS {
-                            "linux" => 'Ó',
+                            "linux" => 'ó',
                             "macos" => '',
-                            _ => 'Ó',
+                            _ => 'ó',
                         }
                     }
                 ));
